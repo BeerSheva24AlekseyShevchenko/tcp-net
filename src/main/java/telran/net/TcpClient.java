@@ -6,6 +6,8 @@ import java.time.Instant;
 
 import org.json.JSONObject;
 
+import telran.net.exceptions.ServerUnavailableException;
+
 import static telran.net.TcpConfigurationProperties.*;
 
 public class TcpClient implements Closeable, NetworkClient {
@@ -41,8 +43,11 @@ public class TcpClient implements Closeable, NetworkClient {
                 waitForInterval();
                 count--;
             }
-
         } while (count != 0);
+
+        if (socket == null) {
+            throw new ServerUnavailableException(host, port);
+        }
     }
 
     private void waitForInterval() {
@@ -54,11 +59,17 @@ public class TcpClient implements Closeable, NetworkClient {
 
     @Override
     public void close() throws IOException {
-        socket.close();
+        if (socket != null) {
+            socket.close();
+        }
     }
 
     @Override
     public String sendAndReceive(String requestType, String requestData) {
+        if (socket == null) {
+            throw new ServerUnavailableException(host, port);
+        }
+
         Request request = new Request(requestType, requestData);
 
         try {
@@ -72,7 +83,8 @@ public class TcpClient implements Closeable, NetworkClient {
             }
             return responseData;
         } catch (IOException e) {
-            throw new RuntimeException("Server is unavailable");
+            connect();
+            throw new ServerUnavailableException(host, port);
         }
     }
 
