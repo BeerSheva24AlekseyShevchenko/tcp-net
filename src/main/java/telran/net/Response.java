@@ -4,6 +4,10 @@ import org.json.JSONObject;
 import static telran.net.TcpConfigurationProperties.*;
 
 public record Response(ResponseCode responseCode, String responseData) {
+    public boolean isSuccess() {
+        return responseCode.equals(ResponseCode.OK);
+    }
+
     @Override
     public String toString() {
         JSONObject jsonObj = new JSONObject();

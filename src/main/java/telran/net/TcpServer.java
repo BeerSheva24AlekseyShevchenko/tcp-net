@@ -1,10 +1,14 @@
 package telran.net;
 
 import java.net.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class TcpServer implements Runnable {
-    Protocol protocol;
-    int port;
+    private ExecutorService connections = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+    private Protocol protocol;
+    private int port;
 
     public TcpServer(Protocol protocol, int port) {
         this.protocol = protocol;
@@ -13,17 +17,29 @@ public class TcpServer implements Runnable {
 
     @Override
     public void run() {
+        new Thread(this::runServer).start();;
+    }
+
+    private void runServer() {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("Server is listening on the port " + port);
-            while (true) {
-                Socket socket = serverSocket.accept();
-                var session = new TcpClientServerSession(protocol, socket);
-                Thread thread = new Thread(session);
-                thread.start();
+            serverSocket.setSoTimeout(500);
+            while (!connections.isShutdown()) {
+                try {
+                    Socket socket = serverSocket.accept();
+                    var session = new TcpClientServerSession(protocol, socket);
+                    connections.execute(session);
+                } catch (SocketTimeoutException e) {
+                    // check shutdown
+                }
             }
         } catch (Exception e) {
-            System.out.println(e);
+            e.printStackTrace();
         }
     }
 
+
+    public void shutdown() {
+        connections.shutdownNow();
+    }
 }
