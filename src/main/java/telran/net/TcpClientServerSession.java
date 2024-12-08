@@ -10,12 +10,14 @@ import java.io.*;
 public class TcpClientServerSession implements Runnable {
     private final int NEGATIVE_RETRIES_LIMIT = 3;
     private final int REQUESTS_PER_SECOND_LIMIT = 2;
+    private final int WAIT_TIME_LIMIT = 60000;
+
     private Protocol protocol;
     private Socket socket;
 
     private int negativeCount = 0;
     private int callCount = 0;
-    private long lastCallTime;
+    private long callTime;
 
     public TcpClientServerSession(Protocol protocol, Socket socket) {
         this.protocol = protocol;
@@ -28,15 +30,18 @@ public class TcpClientServerSession implements Runnable {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 PrintStream writer = new PrintStream(socket.getOutputStream())) {
             socket.setSoTimeout(500);
+            callTime = System.currentTimeMillis();
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     String request = reader.readLine();
+                    checkRequestFrequency();
+
                     Response response = protocol.getResponse(request);
-                    registerResponse(response);
+                    registerRequest(response);
                     writer.println(response);
                 } catch (SocketTimeoutException e) {
-                    if (negativeCount >= NEGATIVE_RETRIES_LIMIT) throw new SocketNegativeLimitException();
-                    if (callCount >= REQUESTS_PER_SECOND_LIMIT) throw new SocketDDoSException();
+                    checkNegativeLimit();
+                    checkTimeout();
                 }
             }
             socket.close();
@@ -45,7 +50,20 @@ public class TcpClientServerSession implements Runnable {
         }
     }
 
-    private void registerResponse(Response response) {
+    private void checkNegativeLimit() throws SocketNegativeLimitException {
+        if (negativeCount >= NEGATIVE_RETRIES_LIMIT) throw new SocketNegativeLimitException();
+    }
+
+    private void checkRequestFrequency() throws SocketDDoSException {
+        if (callCount >= REQUESTS_PER_SECOND_LIMIT) throw new SocketDDoSException();
+    }
+
+    private void checkTimeout() throws SocketTimeoutException {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - callTime > WAIT_TIME_LIMIT) throw new SocketTimeoutException();
+    }
+
+    private void registerRequest(Response response) {
         if (response.isSuccess()) {
             negativeCount = 0;
         } else {
@@ -53,9 +71,9 @@ public class TcpClientServerSession implements Runnable {
         }
 
         long currentTime = System.currentTimeMillis();
-        if (currentTime - lastCallTime >= 1000) {
+        if (currentTime - callTime >= 1000) {
             callCount = 1;
-            lastCallTime = currentTime;
+            callTime = currentTime;
         } else {
             callCount++;
         }
